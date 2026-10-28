@@ -3,16 +3,11 @@ import eslint from '@eslint/js';
 import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
-const frameworkImports = [
-  {
-    regex: '^(express|pino|zod)(/.*)?$',
-    message: 'Business rules must not depend on frameworks or libraries.',
-  },
-  {
-    regex: '^(node:)?(fs|path|crypto)(/.*)?$',
-    message: 'Business rules must not depend on filesystem or crypto APIs. Define a port instead.',
-  },
-];
+// An allow-list: packages, Node built-ins and anything reached through node_modules are all outside the business rules.
+const relativeImportsOnly = {
+  regex: String.raw`^(?!\.{1,2}/)|(^|/)node_modules(/|$)`,
+  message: 'Business rules may only import relative modules. Reach frameworks, Node APIs and I/O through a port.',
+};
 
 const outerSharedLayers = {
   regex: '(^|/)shared/(http|config|logging|resilience)(/|$)',
@@ -24,10 +19,31 @@ const outerFeatureLayers = {
   message: 'Dependencies must point inward: infrastructure and presentation are outer layers.',
 };
 
-const noProcessGlobal = [
+const PROCESS_MESSAGE = 'Business rules must not read environment variables or process state.';
+
+const noProcessGlobal = ['error', { name: 'process', message: PROCESS_MESSAGE }];
+
+const noProcessThroughGlobalObject = [
   'error',
-  { name: 'process', message: 'Business rules must not read environment variables or process state.' },
+  { object: 'globalThis', property: 'process', message: PROCESS_MESSAGE },
+  { object: 'global', property: 'process', message: PROCESS_MESSAGE },
 ];
+
+const redactedTextAssertions = [
+  ...['TSAsExpression', 'TSTypeAssertion'].map((assertion) => ({
+    selector: `${assertion}[typeAnnotation.typeName.name='RedactedText']`,
+    message: 'Only the sanitizer may create RedactedText. Sanitize the message instead of casting.',
+  })),
+  {
+    selector: "CallExpression > TSTypeParameterInstantiation > TSTypeReference[typeName.name='RedactedText']",
+    message: 'Only the sanitizer may create RedactedText. Do not pass it as an explicit type argument.',
+  },
+];
+
+const noDynamicImports = {
+  selector: 'ImportExpression',
+  message: 'Business rules must not load modules dynamically; dynamic imports bypass the import allow-list.',
+};
 
 export default defineConfig(
   { ignores: ['dist/**', 'coverage/**', 'node_modules/**'] },
@@ -53,7 +69,7 @@ export default defineConfig(
         'error',
         {
           patterns: [
-            ...frameworkImports,
+            relativeImportsOnly,
             outerSharedLayers,
             {
               regex: '(^|/)(application|infrastructure|presentation)(/|$)',
@@ -62,14 +78,12 @@ export default defineConfig(
           ],
         },
       ],
-      'no-restricted-globals': noProcessGlobal,
     },
   },
   {
     files: ['src/secure-inquiry/application/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [...frameworkImports, outerSharedLayers, outerFeatureLayers] }],
-      'no-restricted-globals': noProcessGlobal,
+      'no-restricted-imports': ['error', { patterns: [relativeImportsOnly, outerSharedLayers, outerFeatureLayers] }],
     },
   },
   {
@@ -77,17 +91,22 @@ export default defineConfig(
     files: ['src/**/*.ts'],
     ignores: ['src/secure-inquiry/domain/sanitization/**'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        ...['TSAsExpression', 'TSTypeAssertion'].map((assertion) => ({
-          selector: `${assertion}[typeAnnotation.typeName.name='RedactedText']`,
-          message: 'Only the sanitizer may create RedactedText. Sanitize the message instead of casting.',
-        })),
-        {
-          selector: "CallExpression > TSTypeParameterInstantiation > TSTypeReference[typeName.name='RedactedText']",
-          message: 'Only the sanitizer may create RedactedText. Do not pass it as an explicit type argument.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...redactedTextAssertions],
+    },
+  },
+  // Flat config replaces rule options instead of merging them, so these two blocks must follow the one above.
+  {
+    files: ['src/secure-inquiry/domain/**/*.ts', 'src/secure-inquiry/application/**/*.ts'],
+    rules: {
+      'no-restricted-globals': noProcessGlobal,
+      'no-restricted-properties': noProcessThroughGlobalObject,
+      'no-restricted-syntax': ['error', noDynamicImports, ...redactedTextAssertions],
+    },
+  },
+  {
+    files: ['src/secure-inquiry/domain/sanitization/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', noDynamicImports],
     },
   },
   {

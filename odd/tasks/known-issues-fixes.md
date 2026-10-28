@@ -32,7 +32,7 @@ Fix the five issues left open after the full-project review and listed as known 
 - [x] T1 REL-002 + UNICODE-EMAIL: email detector (RED: 65-character local part, `müller.hans@example.com`, `user@bücher.example`, IDN TLD; keep every existing email test green; adversarial 100k inputs still within bound)
 - [x] T2 REL-001: strict integer env parsing (RED: `" "`, `" 5"`, `"1e3"`, `"0x10"`, `"-1"`, `"2.5"` rejected for every numeric variable; error names the variable, never echoes the value)
 - [x] T3 REL-003: message-free logging of unexpected errors (RED: integration test asserts the planted SSN is absent from logs; unit test on the error handler: type and a stack frame logged, message and cause absent)
-- [ ] T4 RISK-003: allow-list boundary rules (prove with temporary probes: `node:http`, `node:child_process`, dynamic `import()`, `globalThis.process.env` all rejected in domain and application; relative imports still allowed; probes removed)
+- [x] T4 RISK-003: allow-list boundary rules (prove with temporary probes: `node:http`, `node:child_process`, dynamic `import()`, `globalThis.process.env` all rejected in domain and application; relative imports still allowed; probes removed)
 - [ ] T5 Docs: `docs/pii-sanitization.md`, `README.md` (Known issues → resolved, Known limitations updated), `odd/reviews/2026-10-27-full-project-review.md` (follow-ups marked fixed); full `npm run check` and `npm run build`
 
 ## Acceptance criteria
@@ -62,7 +62,13 @@ _Updated after each task. A commit cannot contain its own hash, so each hash is 
   - RED: integration `hides an unexpected provider error behind a generic 500 and audits INTERNAL_ERROR` → `expected '{"level":50,…' not to contain '123-45-6789'` (the log held `"message":"socket hang up near 123-45-6789"` and the same text as the stack's first line). New `test/shared/http/error-handler.test.ts`: 5 failures; pino's `err` serializer also appended `caused by: Error: upstream rejected jane.doe@example.com`.
   - Fix: the unmapped `INTERNAL_ERROR` path logs `error: { type, code?, stack }`, where `type` is the constructor name, `code` only when it is a string, and `stack` keeps only `at` frames after stripping the exact `Name: message` header (so a multi-line message cannot smuggle a frame-shaped line). Non-Error values log `{ type: typeof value }`. 4xx, body-parser, and mapped 5xx (`AUDIT_UNAVAILABLE`) logging are unchanged.
   - GREEN: HTTP, integration, app, and logging-hygiene suites 74 passed. `npm run check` exit 0, 657 passed + 2 skipped.
+  - Commit: `b2cb4f0 fix(http): keep error messages out of unexpected-error logs`.
+- T4 (route: inline, one config file; proof by temporary probes, all removed).
+  - RED: probes in `domain/`, `domain/sanitization/`, and `application/` importing `node:child_process` and `node:http`, calling `await import('node:fs')`, and reading `globalThis.process.env`, `global.process.env`, and `const { process } = globalThis`: the old config reported only the relative `../infrastructure/...` import (1 problem).
+  - Fix: `no-restricted-imports` allow-list `^(?!\.{1,2}/)|(^|/)node_modules(/|$)` replaces the framework/Node deny-list; the relative outer-layer patterns stay; `no-restricted-properties` bans `globalThis.process` and `global.process` (destructuring included); `no-restricted-syntax` bans `ImportExpression`, merged with the RedactedText selectors because flat config replaces rule options (the sanitizer gets the import ban only).
+  - GREEN: 15 violations on the three probes (every import, dynamic import, and process access above); a probe with only relative imports (`./pii-type.js`, `../../shared/errors/app-error.js`) passes with exit 0; preserved rules still fire (`express` type import, relative `node_modules` path, RedactedText cast in the domain, `process` global) while the sanitizer's own cast passes. Probes deleted; `npm run lint` exit 0; `npm run check` exit 0, 657 passed + 2 skipped.
+  - Residual: a relative import of a `src/` root module (`../../composition-root.js`) and aliasing the global object (`const g = globalThis; g.process`) are still not caught.
 
 ## Next step
 
-T4.
+T5.
