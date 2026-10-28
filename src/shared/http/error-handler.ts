@@ -29,6 +29,35 @@ const SHARED_MAPPINGS: ErrorMappings = {
 
 const INTERNAL_ERROR: ErrorResponse = { status: 500, code: 'INTERNAL_ERROR', message: 'Internal server error' };
 
+interface UnexpectedErrorSummary {
+  readonly type: string;
+  readonly code?: string;
+  readonly stack?: string;
+}
+
+const STACK_FRAME = /^\s+at /;
+
+function stackFrames(error: Error): string | undefined {
+  if (typeof error.stack !== 'string') return undefined;
+  // V8 opens the stack with "Name: message", and the message may span lines that look like frames.
+  const header = Error.prototype.toString.call(error);
+  const trace = error.stack.startsWith(header) ? error.stack.slice(header.length) : error.stack;
+  const frames = trace.split('\n').filter((line) => STACK_FRAME.test(line));
+  return frames.length === 0 ? undefined : frames.join('\n');
+}
+
+// An unexpected error's message and cause chain can quote anything, including request PII.
+function summarizeUnexpectedError(error: unknown): UnexpectedErrorSummary {
+  if (!(error instanceof Error)) return { type: typeof error };
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+  const stack = stackFrames(error);
+  return {
+    type: error.constructor.name,
+    ...(code === undefined ? {} : { code }),
+    ...(stack === undefined ? {} : { stack }),
+  };
+}
+
 function isBodyParserError(error: unknown): error is BodyParserError {
   return (
     typeof error === 'object' &&
@@ -93,6 +122,8 @@ export function createErrorHandler(featureMappings: ErrorMappings = {}): ErrorRe
       // Body-parser errors carry the raw payload in `body`, and JSON SyntaxError messages quote
       // part of it. Logging the error object or its message would leak request PII.
       logger.warn({ code: response.code, type: error.type }, 'Request body rejected');
+    } else if (response === INTERNAL_ERROR) {
+      logger.error({ error: summarizeUnexpectedError(error), code: response.code }, 'Request failed');
     } else if (response.status >= 500) {
       logger.error({ err: error, code: response.code }, 'Request failed');
     } else {

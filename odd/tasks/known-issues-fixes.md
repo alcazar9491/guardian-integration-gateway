@@ -31,7 +31,7 @@ Fix the five issues left open after the full-project review and listed as known 
 
 - [x] T1 REL-002 + UNICODE-EMAIL: email detector (RED: 65-character local part, `müller.hans@example.com`, `user@bücher.example`, IDN TLD; keep every existing email test green; adversarial 100k inputs still within bound)
 - [x] T2 REL-001: strict integer env parsing (RED: `" "`, `" 5"`, `"1e3"`, `"0x10"`, `"-1"`, `"2.5"` rejected for every numeric variable; error names the variable, never echoes the value)
-- [ ] T3 REL-003: message-free logging of unexpected errors (RED: integration test asserts the planted SSN is absent from logs; unit test on the error handler: type and a stack frame logged, message and cause absent)
+- [x] T3 REL-003: message-free logging of unexpected errors (RED: integration test asserts the planted SSN is absent from logs; unit test on the error handler: type and a stack frame logged, message and cause absent)
 - [ ] T4 RISK-003: allow-list boundary rules (prove with temporary probes: `node:http`, `node:child_process`, dynamic `import()`, `globalThis.process.env` all rejected in domain and application; relative imports still allowed; probes removed)
 - [ ] T5 Docs: `docs/pii-sanitization.md`, `README.md` (Known issues → resolved, Known limitations updated), `odd/reviews/2026-10-27-full-project-review.md` (follow-ups marked fixed); full `npm run check` and `npm run build`
 
@@ -57,7 +57,12 @@ _Updated after each task. A commit cannot contain its own hash, so each hash is 
   - RED: 60 failures over the six numeric variables. `" "`, `"\t"`, `" 5"`, `"5 "`, `"1e3"`, `"0x10"`, `"+5"` were accepted (`Error: Expected loadConfig to throw a ConfigError`); `"-1"`, `"2.5"`, `"١٢"` were rejected with value-specific rule messages (`Too small: expected number to be >=0`).
   - Fix: numeric variables are `z.string().regex(/^\d+$/)` piped through `Number` into the existing integer range; empty strings still fall back to the default (normalized to `undefined` before parsing).
   - GREEN: config suite 120 passed (each variable also reads `"0010"` as 10 and uses its default for `""`). `npm run check` exit 0, 652 passed + 2 skipped.
+  - Commit: `d1653c9 fix(config): reject non-decimal numeric environment values`.
+- T3 (route: inline, one source file plus two test files).
+  - RED: integration `hides an unexpected provider error behind a generic 500 and audits INTERNAL_ERROR` → `expected '{"level":50,…' not to contain '123-45-6789'` (the log held `"message":"socket hang up near 123-45-6789"` and the same text as the stack's first line). New `test/shared/http/error-handler.test.ts`: 5 failures; pino's `err` serializer also appended `caused by: Error: upstream rejected jane.doe@example.com`.
+  - Fix: the unmapped `INTERNAL_ERROR` path logs `error: { type, code?, stack }`, where `type` is the constructor name, `code` only when it is a string, and `stack` keeps only `at` frames after stripping the exact `Name: message` header (so a multi-line message cannot smuggle a frame-shaped line). Non-Error values log `{ type: typeof value }`. 4xx, body-parser, and mapped 5xx (`AUDIT_UNAVAILABLE`) logging are unchanged.
+  - GREEN: HTTP, integration, app, and logging-hygiene suites 74 passed. `npm run check` exit 0, 657 passed + 2 skipped.
 
 ## Next step
 
-T3.
+T4.

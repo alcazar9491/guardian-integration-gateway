@@ -317,6 +317,9 @@ describe('POST /secure-inquiry: provider failures', () => {
     expect(response.text).not.toContain('socket hang up');
     expectNoLeak(response.text);
     expect(await latestOutcomes(harness)).toEqual(['INTERNAL_ERROR']);
+    expect(harness.logs()).toContain('Request failed');
+    expect(harness.logs()).not.toContain(SSN);
+    expect(harness.logs()).not.toContain('socket hang up');
   });
 });
 
