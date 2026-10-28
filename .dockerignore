@@ -1,0 +1,28 @@
+# Build context allow-list: deny everything, then admit only what `npm ci` and `npm run build` need.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!src/
+
+# Never in the build context, even if an allow rule above would admit them (later rules win).
+**/.env
+**/.env.*
+.git
+node_modules
+dist
+data
+coverage
+test
+docs
+odd
+scripts
+.atl
+.codegraph
+.claude
+**/*.log
+**/*.tmp
+**/*.swp
+**/.DS_Store
+**/Thumbs.db

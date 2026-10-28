@@ -1,0 +1,44 @@
+# Guardian Integration Gateway: local Compose stack.
+# Keys reach the container only at runtime. Compose interpolates ${...} from the shell environment and from
+# a local .env in this directory (gitignored; create it with `npm run setup:dev-env`). They never enter the image.
+#
+#   docker compose up --build -d        start (http://localhost:${HOST_PORT:-3000})
+#   docker compose logs -f gateway      follow logs
+#   docker compose down                 stop (keeps the audit volume); add -v to delete it
+
+services:
+  gateway:
+    build: .
+    image: guardian-gateway:local
+    init: true
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REQUEST_BODY_LIMIT_BYTES: ${REQUEST_BODY_LIMIT_BYTES:-16384}
+      AUDIT_FILE_PATH: /app/data/audit.jsonl
+      AUDIT_ENCRYPTION_KEY: ${AUDIT_ENCRYPTION_KEY:?AUDIT_ENCRYPTION_KEY is required (run npm run setup:dev-env or export it)}
+      AUDIT_ENCRYPTION_KEY_ID: ${AUDIT_ENCRYPTION_KEY_ID:-v1}
+      AUDIT_USER_REF_KEY: ${AUDIT_USER_REF_KEY:?AUDIT_USER_REF_KEY is required (a second key, different from AUDIT_ENCRYPTION_KEY)}
+      AI_PROVIDER_DELAY_MS: ${AI_PROVIDER_DELAY_MS:-2000}
+      AI_PROVIDER_TIMEOUT_MS: ${AI_PROVIDER_TIMEOUT_MS:-5000}
+      AI_PROVIDER_FAILURES: ${AI_PROVIDER_FAILURES:-never}
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: ${CIRCUIT_BREAKER_FAILURE_THRESHOLD:-3}
+      CIRCUIT_BREAKER_COOLDOWN_MS: ${CIRCUIT_BREAKER_COOLDOWN_MS:-30000}
+    volumes:
+      # The audit trail survives restarts and re-creates; `docker compose down -v` deletes it.
+      - audit-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Above the app's 10 s forced-exit timer, so a slow drain is never cut short by SIGKILL.
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  audit-data:
