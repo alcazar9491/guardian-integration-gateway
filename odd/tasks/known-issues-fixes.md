@@ -33,7 +33,7 @@ Fix the five issues left open after the full-project review and listed as known 
 - [x] T2 REL-001: strict integer env parsing (RED: `" "`, `" 5"`, `"1e3"`, `"0x10"`, `"-1"`, `"2.5"` rejected for every numeric variable; error names the variable, never echoes the value)
 - [x] T3 REL-003: message-free logging of unexpected errors (RED: integration test asserts the planted SSN is absent from logs; unit test on the error handler: type and a stack frame logged, message and cause absent)
 - [x] T4 RISK-003: allow-list boundary rules (prove with temporary probes: `node:http`, `node:child_process`, dynamic `import()`, `globalThis.process.env` all rejected in domain and application; relative imports still allowed; probes removed)
-- [ ] T5 Docs: `docs/pii-sanitization.md`, `README.md` (Known issues → resolved, Known limitations updated), `odd/reviews/2026-10-27-full-project-review.md` (follow-ups marked fixed); full `npm run check` and `npm run build`
+- [x] T5 Docs: `docs/pii-sanitization.md`, `README.md` (Known issues → resolved, Known limitations updated), `odd/reviews/2026-10-27-full-project-review.md` (follow-ups marked fixed); full `npm run check` and `npm run build`
 
 ## Acceptance criteria
 
@@ -68,7 +68,13 @@ _Updated after each task. A commit cannot contain its own hash, so each hash is 
   - Fix: `no-restricted-imports` allow-list `^(?!\.{1,2}/)|(^|/)node_modules(/|$)` replaces the framework/Node deny-list; the relative outer-layer patterns stay; `no-restricted-properties` bans `globalThis.process` and `global.process` (destructuring included); `no-restricted-syntax` bans `ImportExpression`, merged with the RedactedText selectors because flat config replaces rule options (the sanitizer gets the import ban only).
   - GREEN: 15 violations on the three probes (every import, dynamic import, and process access above); a probe with only relative imports (`./pii-type.js`, `../../shared/errors/app-error.js`) passes with exit 0; preserved rules still fire (`express` type import, relative `node_modules` path, RedactedText cast in the domain, `process` global) while the sanitizer's own cast passes. Probes deleted; `npm run lint` exit 0; `npm run check` exit 0, 657 passed + 2 skipped.
   - Residual: a relative import of a `src/` root module (`../../composition-root.js`) and aliasing the global object (`const g = globalThis; g.process`) are still not caught.
+  - Commit: `2442d9c fix(lint): enforce layer boundaries with an import allow-list`.
+- T5 (route: inline, docs only).
+  - `docs/pii-sanitization.md`: email row covers any script and any local-part length; Unicode token-boundary note; over-redaction in scripts without spaces; non-ASCII local-part limitation removed; ReDoS note explains the one unbounded quantifier.
+  - `README.md`: "Known issues" replaced by "Resolved review findings" (five rows with fix commit subjects) and its contents link; partial non-ASCII redaction dropped from Known limitations; numeric-variable rule, lint allow-list, and unexpected-error logging described where the old text was.
+  - Review record: REL-001, REL-002, REL-003, RISK-003 follow-ups marked fixed with hashes; the non-ASCII local-part residual marked fixed (frozen ledger untouched).
+  - Final: `npm run check` exit 0, 657 passed + 2 skipped; `npm run build` exit 0. This commit's own hash is reported outside the document.
 
 ## Next step
 
-T5.
+None in scope: push and pull request are the user's decisions. Engram mirror `odd/known-issues-fixes/tasks` still PENDING.

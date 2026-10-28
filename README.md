@@ -11,7 +11,7 @@ A secure middleware between clients and an AI provider:
 
 ## Contents
 
-[Prerequisites](#prerequisites) · [Quick start](#quick-start) · [Configuration](#configuration) · [Commands](#commands) · [API](#api) · [Architecture](#architecture) · [Design patterns](#design-patterns) · [Security decisions](#security-decisions) · [Circuit breaker](#circuit-breaker) · [Development keys](#development-only-key-generation) · [Demo-video guide](#demo-video-guide) · [Known limitations](#known-limitations) · [Known issues](#known-issues) · [Project layout](#project-layout) · [Further docs](#further-documentation)
+[Prerequisites](#prerequisites) · [Quick start](#quick-start) · [Configuration](#configuration) · [Commands](#commands) · [API](#api) · [Architecture](#architecture) · [Design patterns](#design-patterns) · [Security decisions](#security-decisions) · [Circuit breaker](#circuit-breaker) · [Development keys](#development-only-key-generation) · [Demo-video guide](#demo-video-guide) · [Known limitations](#known-limitations) · [Resolved review findings](#resolved-review-findings) · [Project layout](#project-layout) · [Further docs](#further-documentation)
 
 ## Prerequisites
 
@@ -49,7 +49,7 @@ Keys reach the container as runtime environment variables; they are never copied
 
 ## Configuration
 
-Every variable is read once at startup and validated with zod. An invalid value stops the process with exit code 1 and a message that names the variable, never its value. Empty values count as unset.
+Every variable is read once at startup and validated with zod. An invalid value stops the process with exit code 1 and a message that names the variable, never its value. Empty values count as unset. Numeric variables accept the digits 0-9 only: whitespace, signs, decimals, exponents, and hex are rejected.
 
 | Variable | Default | Required | Meaning |
 |---|---|---|---|
@@ -177,7 +177,7 @@ Fallbacks are HTTP 200 on purpose: the request was validated, sanitized, and aud
 
 ## Architecture
 
-Clean/hexagonal layers per feature (`src/secure-inquiry/{domain,application,infrastructure,presentation}`). Dependencies point inward, and ESLint fails the build when the domain or application imports Express, pino, zod, `fs`, `crypto`, or an outer layer. `src/composition-root.ts` is the only file that knows concrete classes.
+Clean/hexagonal layers per feature (`src/secure-inquiry/{domain,application,infrastructure,presentation}`). Dependencies point inward, and ESLint fails the build when the domain or application imports anything but relative modules (no packages, Node built-ins, or dynamic `import()`), reaches an outer layer, or reads `process`. `src/composition-root.ts` is the only file that knows concrete classes.
 
 ```mermaid
 flowchart TB
@@ -251,7 +251,7 @@ flowchart TB
 | Key separation | `AUDIT_USER_REF_KEY` is a separate key, rejected if equal to the encryption key; they rotate independently |
 | Pseudonymous users | The audit stores `userRef = base64url(HMAC-SHA256(key, userId))`, never the raw `userId` |
 | Audit before egress | Revision 1 (`PENDING`, encrypted original) is durable before the provider is called; if it fails, the provider is never called |
-| No PII in logs | Request logs carry ids, method, path, status, and duration; audit failures log error names and codes only; the logger also redacts `body` fields (one gap: [REL-003](#known-issues)) |
+| No PII in logs | Request logs carry ids, method, path, status, and duration; audit failures log error names and codes only; unexpected errors log their type, string code, and stack frames, never the message or cause; the logger also redacts `body` fields |
 | Response headers | `nosniff`, `no-store`, CSP `default-src 'none'`, `DENY` framing, `no-referrer`, CORP `same-origin` |
 | Body limits | 16 KB body, 5,000-character message, 128-character `userId`, unknown fields rejected |
 | Charset policy | JSON as UTF-8 only (RFC 8259); any other declared charset gets 415 |
@@ -356,8 +356,7 @@ A storyboard for recording a walkthrough. Bash syntax; PowerShell equivalents fo
 
 ## Known limitations
 
-- **Regex detection** sees shape, not meaning: false positives (9-digit order numbers), missed formats (non-ASCII digits, mixed separators, values split across lines), trivial evasion (zero-width characters, encodings), and no names, addresses, or phone numbers ([details](docs/pii-sanitization.md#limitations-of-regex-based-detection)).
-- **Non-ASCII email local parts are only partly redacted**: `müller.hans@example.com` becomes `mü<REDACTED: EMAIL>`; the local part up to its last non-ASCII character leaks.
+- **Regex detection** sees shape, not meaning: false positives (9-digit order numbers, words glued to an email in scripts written without spaces), missed formats (digits glued to letters, non-ASCII digits, mixed separators, values split across lines), trivial evasion (zero-width characters, encodings), and no names, addresses, or phone numbers ([details](docs/pii-sanitization.md#limitations-of-regex-based-detection)).
 - **Single process.** The breaker state is in memory per process; the JSONL audit store is safe for one writer only. Run one replica; production needs a database ([audit-store.md](docs/audit-store.md#production-replacement)).
 - **Audit file**: no rotation, retention, or erasure; O(n) reads; no directory fsync when the file is first created; file modes apply only to newly created paths and are ignored on Windows.
 - **No rate limiting or authentication**; the audit write queue and concurrent provider calls are unbounded (no bulkhead).
@@ -370,16 +369,17 @@ A storyboard for recording a walkthrough. Bash syntax; PowerShell equivalents fo
 - **The AI provider is a mock**; no real provider integration.
 - **Image**: the base is pinned to `node:24.19-alpine` (minor tag), not a digest; npm stays in the runtime image.
 
-## Known issues
+## Resolved review findings
 
-Open warning-level findings from the project review (`odd/reviews/2026-10-27-full-project-review.md`), not yet fixed:
+The warning-level findings the project review (`odd/reviews/2026-10-27-full-project-review.md`) left open are fixed, each with a regression test that failed first:
 
-| ID | Issue | Effect |
+| ID | Was | Fixed by |
 |---|---|---|
-| REL-001 | Whitespace-only numeric variables coerce to 0 | `AI_PROVIDER_DELAY_MS=" "` silently disables the delay instead of failing startup |
-| REL-002 | Emails with a local part of 65+ characters are not redacted | Such an address leaks to the provider and the audit `sanitizedMessage` |
-| REL-003 | The unexpected-error test asserts the response but not the logs | 5xx logs include the error message and stack, so an unexpected error whose message contained PII would log it |
-| RISK-003 | The layer-boundary lint rule is a deny-list | Other `node:*` modules, dynamic `import()`, and `globalThis.process` bypass it |
+| REL-001 | Whitespace-only numeric variables coerced to 0 (`AI_PROVIDER_DELAY_MS=" "` disabled the delay) | `fix(config): reject non-decimal numeric environment values` |
+| REL-002 | Emails with a local part of 65+ characters were not redacted | `fix(sanitizer): redact long and internationalized email addresses` |
+| UNICODE-EMAIL | Non-ASCII local parts were partly redacted (`müller.hans@example.com` → `mü<REDACTED: EMAIL>`); non-ASCII domains were missed | `fix(sanitizer): redact long and internationalized email addresses` |
+| REL-003 | Unexpected 5xx errors were logged with their message and cause chain | `fix(http): keep error messages out of unexpected-error logs` |
+| RISK-003 | The layer-boundary lint rule was a deny-list that other `node:*` modules, dynamic `import()`, and `globalThis.process` bypassed | `fix(lint): enforce layer boundaries with an import allow-list` |
 
 ## Project layout
 

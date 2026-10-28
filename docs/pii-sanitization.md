@@ -39,9 +39,11 @@ A number is only redacted when it is a complete token:
 
 | Type | Matches | Examples |
 |---|---|---|
-| Email | ASCII `local@domain.tld`, local part up to 64 characters, dotted domain labels, alphabetic TLD | `john.doe+tag@mail.example.co.uk` |
+| Email | `local@domain.tld` in any script: Unicode letters, combining marks, and digits in the local part and domain labels; local part of any length; dotted domain labels; alphabetic TLD | `john.doe+tag@mail.example.co.uk`, `müller.hans@example.com`, `user@bücher.example`, `info@пример.рф` |
 | Credit card | 13–19 contiguous digits, or 4-4-4-4, 4-4-4-4-3, 4-6-5 (Amex), 4-6-4 (Diners) with one consistent space or hyphen separator | `4111111111111111`, `4111-1111-1111-1111`, `3782 822463 10005` |
 | SSN | 3-2-4 with one consistent space or hyphen separator, or 9 contiguous digits | `123-45-6789`, `123 45 6789`, `123456789` |
+
+An email match starts only where the previous character cannot belong to a local part (Unicode-aware), so it always covers the whole local part, never just its tail.
 
 Deliberate non-goals:
 
@@ -52,11 +54,11 @@ Deliberate non-goals:
 
 Regular expressions see the shape of text, never its meaning.
 
-- **Context-blind false positives.** An order number with 9 digits or a 13-digit millisecond timestamp is redacted as PII.
+- **Context-blind false positives.** An order number with 9 digits or a 13-digit millisecond timestamp is redacted as PII. In scripts written without spaces (Chinese, Japanese, Thai), the words next to an email join its local part or TLD and are redacted with it.
 - **Formatting false negatives.** Fullwidth or Arabic-Indic digits, non-breaking spaces, dot separators, mixed separators, double spaces, and values split across lines are not detected. Two grouped card numbers joined by a single space read as one long number and are not detected.
 - **Trivial evasion.** A zero-width character between digits, spelled-out values (`john at example dot com`), and encodings (base64, URL encoding such as `john%40example.com`, HTML entities) bypass detection.
-- **Narrow coverage.** Names, addresses, phone numbers, IBANs, and dates of birth are out of scope. Non-ASCII email local parts (`josé@ejemplo.com`), quoted local parts, and IP-literal domains are not matched.
-- **ReDoS risk, mitigated.** Patterns use bounded quantifiers and only start at token boundaries, so scanning stays linear. A test runs five 100,000-character adversarial inputs within a generous time bound. The HTTP layer also caps messages at 5,000 characters.
+- **Narrow coverage.** Names, addresses, phone numbers, IBANs, and dates of birth are out of scope. Quoted email local parts and IP-literal domains are not matched.
+- **ReDoS risk, mitigated.** Patterns only start at token boundaries, and every quantifier is bounded except the email local part, which is consumed once per token, so scanning stays linear. A test runs five 100,000-character adversarial inputs within a generous time bound. The HTTP layer also caps messages at 5,000 characters.
 
 The known gaps are pinned by tests under "documented limitations", so a behaviour change is a deliberate decision rather than an accident.
 

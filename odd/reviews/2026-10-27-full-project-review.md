@@ -58,21 +58,21 @@ Terminal state: **approved**.
 
 ## Recommended follow-ups (non-blocking, not fixed in this transaction)
 
-- REL-001: reject non-digit numeric env values before coercion.
-- REL-002: redact over-long email local parts instead of leaking the whole address.
-- REL-003: assert logs in the unexpected-error test; decide whether 5xx logs keep error messages.
-- RISK-003: turn the layer-boundary rule into an allow-list and ban dynamic `import()` and `globalThis.process`.
+- REL-001: reject non-digit numeric env values before coercion. **Fixed** in `d1653c9` (`fix(config): reject non-decimal numeric environment values`): numeric variables must match `^\d+$`.
+- REL-002: redact over-long email local parts instead of leaking the whole address. **Fixed** in `ec63b48` (`fix(sanitizer): redact long and internationalized email addresses`): no local-part cap; the token-start anchor keeps scanning linear.
+- REL-003: assert logs in the unexpected-error test; decide whether 5xx logs keep error messages. **Fixed** in `b2cb4f0` (`fix(http): keep error messages out of unexpected-error logs`): unexpected errors log type, string code, and stack frames only; the test asserts the planted SSN never reaches the logs.
+- RISK-003: turn the layer-boundary rule into an allow-list and ban dynamic `import()` and `globalThis.process`. **Fixed** in `2442d9c` (`fix(lint): enforce layer boundaries with an import allow-list`).
 - READ-002: collapse the overlapping composition-root override shapes.
 - READ-001: README (planned for the Docker slice).
 
 ## Residual limitations
 
-Already documented: in-memory per-process breaker; single-process, single-writer JSONL store, no rotation or retention, O(n) reads, no directory fsync on first create; regex coverage gaps (ASCII emails, glued or non-ASCII digits, mixed separators, back-to-back grouped numbers, decimal context); key remains readable in `process.env`; failure injection reachable in production wiring (startup warning).
+Already documented: in-memory per-process breaker; single-process, single-writer JSONL store, no rotation or retention, O(n) reads, no directory fsync on first create; regex coverage gaps (ASCII emails, fixed in `ec63b48`; glued or non-ASCII digits, mixed separators, back-to-back grouped numbers, decimal context); key remains readable in `process.env`; failure injection reachable in production wiring (startup warning).
 
 Not yet documented (should be):
 
 - Unbounded audit queue and provider concurrency, no rate limiting or authentication (RISK-002).
-- Non-ASCII email local parts are partially redacted, leaking the prefix up to the last non-ASCII character: measured on the built code, `müller.hans@example.com` → `mü<REDACTED: EMAIL>` (the reliability lens's original example `müller<…>` was inaccurate; corrected during delivery). Now documented in the README.
+- Non-ASCII email local parts were partially redacted, leaking the prefix up to the last non-ASCII character: measured on the built code, `müller.hans@example.com` → `mü<REDACTED: EMAIL>` (the reliability lens's original example `müller<…>` was inaccurate; corrected during delivery). **Fixed** in `ec63b48`: local parts, domain labels, and TLDs accept Unicode letters, combining marks, and digits, and a match starts only at a Unicode token boundary, so the whole address is redacted.
 - Random 96-bit IV budget: rotate the key before ~2^32 encryptions.
 - File modes apply only to newly created paths and are ignored on Windows; existing permissions are not tightened.
 - A 5,000-character non-ASCII message can exceed the 16 KB body limit and get 413 before schema validation.
