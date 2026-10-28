@@ -50,7 +50,27 @@ describe('emailDetector', () => {
     expect(detectedValues(text)).toStrictEqual([]);
   });
 
-  it('ignores local parts longer than the 64-character limit', () => {
-    expect(detectedValues(`${'x'.repeat(65)}@example.com`)).toStrictEqual([]);
+  it.each([65, 300])('detects an address whose local part has %i characters', (length) => {
+    const address = `${'x'.repeat(length)}@example.com`;
+
+    expect(detectedValues(`Mail ${address} now`)).toStrictEqual([address]);
+  });
+
+  it.each([
+    ['müller.hans@example.com', 'non-ASCII local part'],
+    ['josé@ejemplo.com', 'local part ending in a non-ASCII letter'],
+    ['müller.hans@example.com', 'decomposed local part with a combining mark'],
+    ['user@bücher.example', 'non-ASCII domain label'],
+    ['info@пример.рф', 'non-ASCII TLD'],
+    ['contact@डाटामेल.भारत', 'domain and TLD with combining vowel signs'],
+    ['用户@例子.广告', 'ideographic local part, domain, and TLD'],
+  ])('detects the whole address %s (%s)', (address) => {
+    expect(detectedValues(`Write to ${address}, please`)).toStrictEqual([address]);
+  });
+
+  it('starts the match at the beginning of a non-ASCII local part, never inside it', () => {
+    const text = 'Grüße an Ärger.Öl@example.com';
+
+    expect(detectedValues(text)).toStrictEqual(['Ärger.Öl@example.com']);
   });
 });

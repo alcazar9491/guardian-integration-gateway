@@ -30,6 +30,10 @@ describe('PiiSanitizer', () => {
       ['Contact john.doe+tag@mail.example.co.uk today', `Contact ${EMAIL} today`],
       ['Mail me: a@b.io.', `Mail me: ${EMAIL}.`],
       ['<john@example.com>', `<${EMAIL}>`],
+      ['Schreib an müller.hans@example.com!', `Schreib an ${EMAIL}!`],
+      ['josé@ejemplo.com', EMAIL],
+      ['Bestellung an user@bücher.example', `Bestellung an ${EMAIL}`],
+      [`long ${'x'.repeat(300)}@example.com`, `long ${EMAIL}`],
     ])('redacts %s', (input, expected) => {
       expect(sanitizeText(input)).toBe(expected);
     });
@@ -228,7 +232,6 @@ describe('PiiSanitizer', () => {
       ['123​45​6789', 'zero-width characters between digits'],
       ['john at example dot com', 'spelled-out email'],
       ['john%40example.com', 'URL-encoded email'],
-      ['josé@ejemplo.com', 'non-ASCII local part'],
       ['4111 1111 1111 1111 4222 2222 2222 2222', 'two grouped cards joined by a single space'],
     ])('does not detect %s (%s)', (input) => {
       expect(sanitizeText(input)).toBe(input);

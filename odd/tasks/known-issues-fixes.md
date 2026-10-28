@@ -1,0 +1,58 @@
+# Feature: known-issues-fixes
+
+## Objective
+
+Fix the five issues left open after the full-project review and listed as known issues in the README, each with a regression test that fails first, then update the docs so nothing claims an issue that no longer exists.
+
+## Issues
+
+| ID | Location | Defect | Fix |
+|---|---|---|---|
+| REL-002 | `src/secure-inquiry/domain/sanitization/detectors/email-detector.ts` | An email whose local part exceeds 64 characters is not redacted at all | Remove the 64-character cap on the local part; the token-start lookbehind keeps matching linear |
+| UNICODE-EMAIL | same | Non-ASCII local parts are partially redacted (`müller.hans@example.com` → `mü<REDACTED: EMAIL>`); non-ASCII domains are not redacted (`user@bücher.example`) | Unicode letters and digits (`\p{L}\p{N}`) in the local part, domain labels, TLD, and the token boundary |
+| REL-001 | `src/shared/config/app-config.ts` | Whitespace-only numeric env values coerce to 0 (`AI_PROVIDER_DELAY_MS=" "` disables the delay) | Numeric variables must match `^\d+$` before conversion; signs, exponents, hex, decimals, and whitespace are rejected without echoing values |
+| REL-003 | `src/shared/http/error-handler.ts`, `test/secure-inquiry.integration.test.ts` | Unexpected 5xx errors are logged with their message (and stack, whose first line repeats it); the integration test never asserts the logs | Log unexpected errors as `{ type, code?, stack frames without the message line }`; never the message or `cause` chain; the test asserts the planted SSN never reaches the logs |
+| RISK-003 | `eslint.config.js` | The domain/application boundary is a deny-list: other `node:*` modules, dynamic `import()`, and `globalThis.process` bypass it | Allow-list: only relative imports (the existing relative-path layer rules stay); ban `ImportExpression`; ban `globalThis.process` / `global.process` |
+
+## Constraints
+
+- Strict TDD: every fix starts with a test that fails on the current code.
+- No behavior change beyond each fix; no new dependencies.
+- Work on branch `fix/review-known-issues`; one Conventional Commit per task, no AI attribution; do not push.
+
+## Workflow settings
+
+- TDD: strict, ON (global CLAUDE.md), runner Vitest.
+- Route: delegated direct, one writer.
+- RDD: unavailable (`gentle-ai` has no `review` command); delivery `disabled/unmanaged`.
+- Engram mirror `odd/known-issues-fixes/tasks`: PENDING (Engram MCP unavailable).
+
+## Tasks
+
+- [x] T1 REL-002 + UNICODE-EMAIL: email detector (RED: 65-character local part, `müller.hans@example.com`, `user@bücher.example`, IDN TLD; keep every existing email test green; adversarial 100k inputs still within bound)
+- [ ] T2 REL-001: strict integer env parsing (RED: `" "`, `" 5"`, `"1e3"`, `"0x10"`, `"-1"`, `"2.5"` rejected for every numeric variable; error names the variable, never echoes the value)
+- [ ] T3 REL-003: message-free logging of unexpected errors (RED: integration test asserts the planted SSN is absent from logs; unit test on the error handler: type and a stack frame logged, message and cause absent)
+- [ ] T4 RISK-003: allow-list boundary rules (prove with temporary probes: `node:http`, `node:child_process`, dynamic `import()`, `globalThis.process.env` all rejected in domain and application; relative imports still allowed; probes removed)
+- [ ] T5 Docs: `docs/pii-sanitization.md`, `README.md` (Known issues → resolved, Known limitations updated), `odd/reviews/2026-10-27-full-project-review.md` (follow-ups marked fixed); full `npm run check` and `npm run build`
+
+## Acceptance criteria
+
+- Each fix has a regression test that failed before the change.
+- `npm run check` and `npm run build` exit 0.
+- No document still lists a fixed issue as open.
+
+## Progress and evidence
+
+_Updated after each task. A commit cannot contain its own hash, so each hash is recorded by the next task's update._
+
+- Baseline: `npm run check` exit 0, 573 passed + 2 skipped.
+- T1 (route: inline, one source file plus its tests).
+  - RED: 14 failures, e.g. `detects the whole address müller.hans@example.com` → `expected [ 'ller.hans@example.com' ] to strictly equal [ 'müller.hans@example.com' ]`; `detects an address whose local part has 65 characters` → `expected [] to strictly equal [ Array(1) ]`; sanitizer `redacts Schreib an müller.hans@example.com!` → received `Schreib an mü<REDACTED: EMAIL>!`.
+  - Fix: unbounded local part anchored at a Unicode token start; `\p{L}\p{M}\p{N}` in the local part, domain labels, TLD, and boundary. Combining marks (`\p{M}`) are included so decomposed input (`müller`) and Indic domains (`डाटामेल.भारत`) are matched whole.
+  - Changed expectations: `ignores local parts longer than the 64-character limit` became `detects an address whose local part has 65/300 characters`; `josé@ejemplo.com` moved from "documented limitations" to the redacted cases.
+  - GREEN: sanitization suites 212 passed; adversarial test 8 ms (bound 1000 ms); extra probes on 100k Unicode inputs ≤ 11 ms each. `npm run check` exit 0, 585 passed + 2 skipped.
+  - Trade-off: in scripts written without spaces, adjacent letters join the token, so `メールはjohn@example.comです` is redacted whole (over-redaction, not a leak).
+
+## Next step
+
+T2.
