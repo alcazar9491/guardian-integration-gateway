@@ -60,7 +60,15 @@ function toSecretKey(base64Key: string): KeyObject {
   }
 }
 
-const integer = (min: number, max: number = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
+const DECIMAL_DIGITS = /^\d+$/;
+
+// Number() reads whitespace as 0 and accepts signs, exponents, hex and decimals, so only plain digits reach it.
+const integer = (min: number, max: number = Number.MAX_SAFE_INTEGER) =>
+  z
+    .string()
+    .regex(DECIMAL_DIGITS, 'must contain only the digits 0-9')
+    .transform(Number)
+    .pipe(z.number().int().min(min).max(max));
 
 const FAILURE_MODE_PATTERN = /^(?:never|always|first:[1-9]\d*)$/;
 const NO_FAILURES: AiProviderFailureMode = { kind: 'never' };

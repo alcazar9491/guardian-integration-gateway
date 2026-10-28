@@ -1,11 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import { inspect } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig } from '../../../src/shared/config/app-config.js';
+import { ConfigError, loadConfig, type AppConfig } from '../../../src/shared/config/app-config.js';
 
 const validKey = randomBytes(32).toString('base64');
 const validUserRefKey = randomBytes(32).toString('base64');
 const baseEnv = { AUDIT_ENCRYPTION_KEY: validKey, AUDIT_USER_REF_KEY: validUserRefKey };
+
+/** Every numeric variable and where its parsed value lands in the configuration. */
+const NUMERIC_VARIABLES: Readonly<Record<string, (config: AppConfig) => number>> = {
+  PORT: (config) => config.http.port,
+  REQUEST_BODY_LIMIT_BYTES: (config) => config.http.bodyLimitBytes,
+  AI_PROVIDER_DELAY_MS: (config) => config.aiProvider.delayMs,
+  AI_PROVIDER_TIMEOUT_MS: (config) => config.aiProvider.timeoutMs,
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: (config) => config.circuitBreaker.failureThreshold,
+  CIRCUIT_BREAKER_COOLDOWN_MS: (config) => config.circuitBreaker.cooldownMs,
+};
 
 /** Every shape key bytes take when rendered: base64, hex, Buffer's inspect form and its JSON form. */
 function keyRenderings(base64Key: string): string[] {
@@ -167,6 +177,36 @@ describe('loadConfig', () => {
     expect(config.http.port).toBe(3000);
     expect(config.log.level).toBe('info');
     expect(config.audit.filePath).toBe('./data/audit.jsonl');
+  });
+
+  it('uses the default for every numeric variable set to an empty string', () => {
+    const config = loadConfig({
+      ...baseEnv,
+      ...Object.fromEntries(Object.keys(NUMERIC_VARIABLES).map((name) => [name, ''])),
+    });
+
+    expect(config).toMatchObject({
+      http: { port: 3000, bodyLimitBytes: 16384 },
+      aiProvider: { delayMs: 2000, timeoutMs: 5000 },
+      circuitBreaker: { failureThreshold: 3, cooldownMs: 30000 },
+    });
+  });
+
+  // Number() reads whitespace as 0 and accepts signs, exponents, hex and decimals, so only digits are valid.
+  describe.each(Object.entries(NUMERIC_VARIABLES))('numeric variable %s', (name, read) => {
+    // The issue is a fixed sentence, identical for every value, so no part of the value is echoed.
+    it.each([' ', '\t', ' 5', '5 ', '1e3', '0x10', '-1', '+5', '2.5', '١٢'])(
+      'rejects the non-decimal value %j without echoing it',
+      (value) => {
+        const error = captureConfigError({ ...baseEnv, [name]: value });
+
+        expect(error.issues).toEqual([`${name}: must contain only the digits 0-9`]);
+      },
+    );
+
+    it('reads leading zeros as a plain decimal', () => {
+      expect(read(loadConfig({ ...baseEnv, [name]: '0010' }))).toBe(10);
+    });
   });
 
   it('returns a frozen configuration', () => {

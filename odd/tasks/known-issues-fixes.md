@@ -30,7 +30,7 @@ Fix the five issues left open after the full-project review and listed as known 
 ## Tasks
 
 - [x] T1 REL-002 + UNICODE-EMAIL: email detector (RED: 65-character local part, `müller.hans@example.com`, `user@bücher.example`, IDN TLD; keep every existing email test green; adversarial 100k inputs still within bound)
-- [ ] T2 REL-001: strict integer env parsing (RED: `" "`, `" 5"`, `"1e3"`, `"0x10"`, `"-1"`, `"2.5"` rejected for every numeric variable; error names the variable, never echoes the value)
+- [x] T2 REL-001: strict integer env parsing (RED: `" "`, `" 5"`, `"1e3"`, `"0x10"`, `"-1"`, `"2.5"` rejected for every numeric variable; error names the variable, never echoes the value)
 - [ ] T3 REL-003: message-free logging of unexpected errors (RED: integration test asserts the planted SSN is absent from logs; unit test on the error handler: type and a stack frame logged, message and cause absent)
 - [ ] T4 RISK-003: allow-list boundary rules (prove with temporary probes: `node:http`, `node:child_process`, dynamic `import()`, `globalThis.process.env` all rejected in domain and application; relative imports still allowed; probes removed)
 - [ ] T5 Docs: `docs/pii-sanitization.md`, `README.md` (Known issues → resolved, Known limitations updated), `odd/reviews/2026-10-27-full-project-review.md` (follow-ups marked fixed); full `npm run check` and `npm run build`
@@ -52,7 +52,12 @@ _Updated after each task. A commit cannot contain its own hash, so each hash is 
   - Changed expectations: `ignores local parts longer than the 64-character limit` became `detects an address whose local part has 65/300 characters`; `josé@ejemplo.com` moved from "documented limitations" to the redacted cases.
   - GREEN: sanitization suites 212 passed; adversarial test 8 ms (bound 1000 ms); extra probes on 100k Unicode inputs ≤ 11 ms each. `npm run check` exit 0, 585 passed + 2 skipped.
   - Trade-off: in scripts written without spaces, adjacent letters join the token, so `メールはjohn@example.comです` is redacted whole (over-redaction, not a leak).
+  - Commit: `ec63b48 fix(sanitizer): redact long and internationalized email addresses`.
+- T2 (route: inline, one source file plus its test).
+  - RED: 60 failures over the six numeric variables. `" "`, `"\t"`, `" 5"`, `"5 "`, `"1e3"`, `"0x10"`, `"+5"` were accepted (`Error: Expected loadConfig to throw a ConfigError`); `"-1"`, `"2.5"`, `"١٢"` were rejected with value-specific rule messages (`Too small: expected number to be >=0`).
+  - Fix: numeric variables are `z.string().regex(/^\d+$/)` piped through `Number` into the existing integer range; empty strings still fall back to the default (normalized to `undefined` before parsing).
+  - GREEN: config suite 120 passed (each variable also reads `"0010"` as 10 and uses its default for `""`). `npm run check` exit 0, 652 passed + 2 skipped.
 
 ## Next step
 
-T2.
+T3.
