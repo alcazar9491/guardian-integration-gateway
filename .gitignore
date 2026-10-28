@@ -1,0 +1,31 @@
+# Local Pi runtime state
+.atl/
+
+# Local code-intelligence index
+.codegraph/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Environment (keep the template)
+.env
+.env.*
+!.env.example
+
+# Runtime data (audit store)
+data/
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editors and scratch files
+.vscode/
+.idea/
+*.swp
+*~
+*.tmp
